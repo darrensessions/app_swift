@@ -62,7 +62,7 @@ install: all
 		install -m 644 $(CONF).sample /etc/asterisk/$(CONF) ; \
 	fi
 	if [ -f $(NAME).so ]; then \
-		install -m 755 $(NAME).so $(MODULES_DIR) ; \
+		install -m 755 $(NAME).so $(ASTERISK_MODULES_DIR) ; \
 	fi
 
 reload: install
