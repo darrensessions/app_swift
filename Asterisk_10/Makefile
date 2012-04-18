@@ -47,7 +47,6 @@ all: $(RES)
 	@echo ""
 
 $(NAME).so : $(NAME).o
-	echo $(ASTERISK_INCLUDE_DIR)
 	$(CC) $(SOLINK) -o $@ $(LDFLAGS) $<
 
 missing_includes:
