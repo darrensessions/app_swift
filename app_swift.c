@@ -1,10 +1,10 @@
 /*
- *
  * app_swift -- A Cepstral Swift TTS engine interface
  *
- * Copyright (C) 2006 - 2010, Darren Sessions
- *
- * Darren Sessions <darrensessions@me.com>
+ * Copyright (C) 2006 - 2012, Darren Sessions 
+ * 
+ * All rights reserved.
+ * 
  *
  * This program is free software, distributed under the 
  * terms of the GNU General Public License Version 2. See 
@@ -23,6 +23,11 @@
  * it's default location (/opt/swift)
  */
 
+/*** MODULEINFO
+        <defaultenabled>no</defaultenabled>
+        <depend>swift</depend>
+ ***/
+
 #include "asterisk.h"
 ASTERISK_FILE_VERSION(__FILE__, "$Revision: 200000 $")
 
@@ -37,15 +42,46 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 200000 $")
 #include "asterisk/app.h"
 #include "asterisk/file.h"
 
+/*** DOCUMENTATION
+        <application name="Swift" language="en_US">
+                <synopsis>
+                        Speak text through Swift text-to-speech engine (without writing files)
+                        and optionally listen for DTMF.
+                </synopsis>
+                <syntax>
+                        <parameter name="'text'" required="true"/>
+                        <parameter name="options">
+                                <optionlist>
+                                        <option name="timeout">
+                                                <para>Timeout in milliseconds.</para>
+                                        </option>
+                                        <option name="digits">
+                                                <para>Maxiumum digits.</para>
+                                        </option>
+                                </optionlist>
+                        </parameter>
+                </syntax>
+                <description>
+                <para>This application streams tts audio from the Cepstral swift engine and
+                will alternatively read DTMF into the ${SWIFT_DTMF} variable if the timeout
+                and digits options are used.</para>
+                </description>
+        </application>
+ ***/
+
 static char *app = "Swift";
 
+#if (defined _AST_VER_1_4 || defined _AST_VER_1_6)
 static char *synopsis = "Speak text through the Cepstral Swift text-to-speech engine.";
+#endif
 
+#if (defined _AST_VER_1_4 || defined _AST_VER_1_6)
 static char *descrip = 
 "This application streams tts audio from the Cepstral swift engine and\n"
 "will alternatively read DTMF into the ${SWIFT_DTMF} variable if the timeout\n"
 "and digits options are used.\n\n"
 " Syntax: Swift(text[|timeout in ms][|maximum digits])\n";
+#endif
 
 const int framesize = 20;
 
@@ -224,16 +260,25 @@ static char *listen_for_dtmf(struct ast_channel *chan, int timeout, int max_digi
 	return strdup(dtmf_conversion);
 }
 
+#if (defined _AST_VER_1_4 || defined _AST_VER_1_6)
 static int app_exec(struct ast_channel *chan, void *data)
+#elif (defined _AST_VER_1_8 || defined _AST_VER_10)
+static int app_exec(struct ast_channel *chan, const char *data)
+#endif
 {
-	int res = 0, argc = 0, max_digits = 0, timeout = 0, alreadyran = 0, old_writeformat = 0;
+	int res = 0, max_digits = 0, timeout = 0, alreadyran = 0;
 	int ms, len, availatend;
-	char *argv[3], *parse = NULL, *text = NULL, *rc = NULL;
+	char *argv[3], *text = NULL, *rc = NULL;
 	char tmp_exten[2], results[20];
 	struct ast_module_user *u;
 	struct ast_frame *f;
 	struct timeval next;
 	struct stuff *ps;
+#if defined _AST_VER_10
+	struct ast_format old_writeformat;
+#else
+	int old_writeformat = 0;
+#endif
 
 	struct myframe {
 		struct ast_frame f;
@@ -253,9 +298,7 @@ static int app_exec(struct ast_channel *chan, void *data)
 	memset(tmp_exten, 0, 2);
 	memset(argv, 0, 3);
 
-	parse = ast_strdupa(data);
 	u = ast_module_user_add(chan);
-	argc = ast_app_separate_args(parse, ',', argv, 3);
 	text = argv[0];
 
 	if (!ast_strlen_zero(argv[1])) {
@@ -323,9 +366,16 @@ static int app_exec(struct ast_channel *chan, void *data)
 	}
 
 	ast_stopstream(chan);
+
+#if (defined _AST_VER_1_4 || defined _AST_VER_1_6 || defined _AST_VER_1_8)
 	old_writeformat = chan->writeformat;
 
 	if (ast_set_write_format(chan, AST_FORMAT_ULAW) < 0) {
+#elif defined _AST_VER_10
+	ast_format_copy(&old_writeformat, &chan->writeformat);
+
+	if (ast_set_write_format_by_id(chan, AST_FORMAT_ULAW) < 0) {
+#endif
 		ast_log(LOG_WARNING, "Unable to set write format.\n");
 		goto exception;
 	}
@@ -365,10 +415,18 @@ static int app_exec(struct ast_channel *chan, void *data)
 				}
 
 				myf.f.frametype = AST_FRAME_VOICE;
+#if (defined _AST_VER_1_6 || defined _AST_VER_1_4)
 				myf.f.subclass = AST_FORMAT_ULAW;
+#elif defined _AST_VER_1_8
+				myf.f.subclass.codec = AST_FORMAT_ULAW;
+#endif
 				myf.f.datalen = len;
 				myf.f.samples = len;
+#if defined _AST_VER_1_4
 				myf.f.data = myf.frdata;
+#elif defined _AST_VER_1_6
+				myf.f.data.ptr = myf.frdata;
+#endif
 				myf.f.mallocd = 0;
 				myf.f.offset = AST_FRIENDLY_OFFSET;
 				myf.f.src = __PRETTY_FUNCTION__;
@@ -409,27 +467,34 @@ static int app_exec(struct ast_channel *chan, void *data)
 					ASTOBJ_WRLOCK(ps);
 					ps->immediate_exit = 1;
 					ASTOBJ_UNLOCK(ps);
-				} else if (f->frametype == AST_FRAME_DTMF && timeout > 0 && max_digits > 0) {
-					char originDTMF = f->subclass;
-					alreadyran = 1;
-					res = 0;
-					ASTOBJ_WRLOCK(ps);
-					ps->immediate_exit = 1;
-					ASTOBJ_UNLOCK(ps);
+				} else {
+					if (f->frametype == AST_FRAME_DTMF && timeout > 0 && max_digits > 0) {
+#if (defined _AST_VER_1_6 || defined _AST_VER_1_4)
+						char originalDTMF = f->subclass;
+#elif (defined _AST_VER_1_8 || defined _AST_VER_10)
+						char originalDTMF = f->subclass.integer;
+#endif
+						alreadyran = 1;
+						res = 0;
+						ASTOBJ_WRLOCK(ps);
+						ps->immediate_exit = 1;
+						ASTOBJ_UNLOCK(ps);
 
-					if (max_digits > 1) {
-						rc = listen_for_dtmf(chan, timeout, max_digits - 1);
-					}
-					if (rc) {
-						sprintf(results, "%c%s", originDTMF, rc);
-					} else {
-						sprintf(results, "%c", originDTMF);
-					}
+						if (max_digits > 1) {
+							rc = listen_for_dtmf(chan, timeout, max_digits - 1);
+						}
 
-					ast_log(LOG_NOTICE, "DTMF = %s\n", results);
-					pbx_builtin_setvar_helper(chan, "SWIFT_DTMF", results);
+						if (rc) {
+							sprintf(results, "%c%s", originalDTMF, rc);
+						} else {
+							sprintf(results, "%c", originalDTMF);
+						}
+
+						ast_log(LOG_NOTICE, "DTMF = %s\n", results);
+						pbx_builtin_setvar_helper(chan, "SWIFT_DTMF", results);
+					}
+					ast_frfree(f);
 				}
-				ast_frfree(f);
 			}
 		}
 
@@ -456,7 +521,11 @@ static int app_exec(struct ast_channel *chan, void *data)
 		if (cfg_goto_exten) {
 			ast_log(LOG_NOTICE, "GoTo(%s|%s|%d) : ", chan->context, results, 1);
 
+#if (defined _AST_VER_1_6 || defined _AST_VER_1_4)
 			if (ast_exists_extension (chan, chan->context, results, 1, chan->cid.cid_num)) {
+#elif (defined _AST_VER_1_8 || defined _AST_VER_10)
+			 if (ast_exists_extension (chan, chan->context, results, 1, chan->caller.id.number.str)) {
+#endif
 				ast_log(LOG_NOTICE, "OK\n");
 				ast_copy_string(chan->exten, results, sizeof(chan->exten) - 1);
 				chan->priority = 0;
@@ -482,10 +551,15 @@ static int app_exec(struct ast_channel *chan, void *data)
 		ast_free(ps);
 		ps = NULL;
 	}
+#if (defined _AST_VER_1_6 || defined _AST_VER_1_4 || defined _AST_VER_1_8)
 	if (!res && old_writeformat) {
 		ast_set_write_format(chan, old_writeformat);
 	}
-
+#elif defined _AST_VER_10
+	if (!res) {
+		ast_set_write_format(chan, &old_writeformat);
+	}
+#endif
 	ast_module_user_remove(u);
 	return res;
 }
@@ -505,6 +579,9 @@ static int load_module(void)
 	int res = 0;
 	const char *val = NULL;
 	struct ast_config *cfg;
+#if  (defined _AST_VER_1_6 || defined _AST_VER_1_8 || defined _AST_VER_10)
+	struct ast_flags config_flags = { CONFIG_FLAG_NOCACHE };
+#endif
 
 	/* Set some defaults */
 	cfg_buffer_size = 65535;
@@ -513,10 +590,19 @@ static int load_module(void)
 
 	ast_copy_string(cfg_voice, "Allison-8kHz", sizeof(cfg_voice));
 
+
+#if (defined _AST_VER_1_6 || defined _AST_VER_1_4)
 	res = ast_register_application(app, app_exec, synopsis, descrip) ?
+#elif (defined _AST_VER_1_8 || defined _AST_VER_10)
+	res = ast_register_application_xml(app, app_exec) ?
+#endif
 		AST_MODULE_LOAD_DECLINE : AST_MODULE_LOAD_SUCCESS;
 
+#if defined _AST_VER_1_4
 	cfg = ast_config_load(SWIFT_CONFIG_FILE);
+#elif (defined _AST_VER_1_6 || defined _AST_VER_1_8 || defined _AST_VER_10)
+	cfg = ast_config_load(SWIFT_CONFIG_FILE, config_flags);
+#endif
 
 	if (cfg) {
 		if ((val = ast_variable_retrieve(cfg, "general", "buffer_size"))) {
@@ -540,6 +626,7 @@ static int load_module(void)
 	} else {
 		ast_log(LOG_NOTICE, "Failed to load config\n");
 	}
+
 	return res;
 }
 
