@@ -32,6 +32,10 @@ CFLAGS=-I${SWIFT_DIR}/include -I${SYS_INC_DIR} -g -Wall -fPIC
 LDFLAGS=-L${SWIFT_DIR}/lib -L${SYS_LIB_DIR} -lswift $(patsubst ${SWIFT_DIR}/lib/lib%.so,-l%,$(wildcard ${SWIFT_DIR}/lib/libcep*.so))
 SOLINK=-shared -Xlinker -x
 
+CFLAGS+=-D_SWIFT_VER_$(shell \
+	swift --version | grep "Cepstral Swift " - | sed -e "s/Cepstral\ Swift\ //" - | awk -F. '{printf "%01d", $$1}' -; \
+)
+
 AST_INC_CHECK=$(shell if [ -f $(AST_INC_DIR)/channel.h ]; then echo "$(NAME).so"; else echo "ast_inc_fail"; fi)
 
 AST_FULL_VER=$(shell \
@@ -60,14 +64,13 @@ else
 	CFLAGS+= $(AST_MAJOR_VER)
 endif
 
-SWIFT_FULL_VER=
-
 
 all: banner $(AST_INC_CHECK) $(AST_VER_CHECK)
 	@echo ""
 	@echo "  ********************************************************"
 	@echo "  *  Run 'make install' to install the app_swift module. *"
 	@echo "  ********************************************************"
+	@echo ""
 
 $(NAME).so : $(NAME).o
 	$(CC) $(SOLINK) -o $@ $(LDFLAGS) $<

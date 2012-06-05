@@ -3,6 +3,8 @@
  *
  * Copyright (C) 2006 - 2012, Darren Sessions 
  * 
+ * Portions Copyright (C) 2012, Cepstral LLC.
+ *
  * All rights reserved.
  * 
  *
@@ -32,6 +34,9 @@
 ASTERISK_FILE_VERSION(__FILE__, "$Revision: 300000 $")
 
 #include <swift.h>
+#if defined _SWIFT_VER_6
+#include <swift_asterisk_interface.h>
+#endif
 
 #include <math.h>
 
@@ -214,6 +219,22 @@ static swift_result_t swift_cb(swift_event *event, swift_event_t type, void *uda
 		ASTOBJ_WRLOCK(ps);
 		ps->generating_done = 1;
 		ASTOBJ_UNLOCK(ps);
+#if defined _SWIFT_VER_6
+	} else if (type == SWIFT_EVENT_ERROR) {
+		/* 
+		 * Error events are used to communicate to app_swift that there are no more swift_ports available.
+		 * So check to make sure that is the cause of the error signal, then terminate. 
+		 * Termination may not be the best behavior, but any queuing should be managed on the Asterisk side.
+		 */
+		swift_result_t error_code;
+
+		if ((swift_event_get_error(event, &error_code, NULL)==SWIFT_SUCCESS) && (error_code == SWIFT_PORT_UNAVAILABLE)) {
+			ast_log(LOG_WARNING, "Received SWIFT_EVENT_ERROR with code: SWIFT_PORT_UNAVAILABLE.  There are no ports available for simultaneous synthesis.  All licensed ports are already in use.\n");
+			ASTOBJ_WRLOCK(ps);
+			ps->generating_done = 1;
+			ASTOBJ_UNLOCK(ps);
+		}
+#endif
 	} else {
 		ast_log(LOG_DEBUG, "UNKNOWN callback\n");
 	}
@@ -349,12 +370,29 @@ static int app_exec(struct ast_channel *chan, const char *data)
 		ast_log(LOG_ERROR, "Failed to open Swift Port.\n");
 		goto exception;
 	}
+
+#if defined _SWIFT_VER_6
+	if (port!=NULL) {
+		/* 
+		 * This registers a chan with swift, otherwise through repeated DTMF+synth requests
+		 * a single call could consume all available concurrent synthesis ports.
+                 */
+		swift_register_ast_chan(port, chan);
+	}
+#endif
+	
 	if ((voice = swift_port_set_voice_by_name(port, cfg_voice)) == NULL) {
 		ast_log(LOG_ERROR, "Failed to set voice.\n");
 		goto exception;
 	}
 
+
+#if defined _SWIFT_VER_6
+	event_mask = SWIFT_EVENT_AUDIO | SWIFT_EVENT_END | SWIFT_EVENT_ERROR;
+#elif defined _SWIFT_VER_5
 	event_mask = SWIFT_EVENT_AUDIO | SWIFT_EVENT_END;
+#endif
+
 	swift_port_set_callback(port, &swift_cb, event_mask, ps);
 
 	if (SWIFT_FAILED(swift_port_speak_text(port, text, 0, NULL, &tts_stream, NULL))) {
@@ -493,7 +531,10 @@ static int app_exec(struct ast_channel *chan, const char *data)
 						ast_log(LOG_NOTICE, "DTMF = %s\n", results);
 						pbx_builtin_setvar_helper(chan, "SWIFT_DTMF", results);
 					}
-					ast_frfree(f);
+
+					if (f!=NULL) {
+						ast_frfree(f);
+					}
 				}
 			}
 		}
