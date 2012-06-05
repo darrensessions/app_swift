@@ -31,7 +31,7 @@
  ***/
 
 #include "asterisk.h"
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 300000 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision: 301000 $")
 
 #include <swift.h>
 #if defined _SWIFT_VER_6
