@@ -3,6 +3,7 @@
  *
  * Copyright (C) 2006 - 2012, Darren Sessions 
  * Portions Copyright (C) 2012, Cepstral LLC.
+ * Asterisk 11 additions/several fixes by Jeremy Kister 2013.01.24
  *
  * All rights reserved.
  * 
@@ -30,7 +31,7 @@
  ***/
 
 #include "asterisk.h"
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 301000 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision: 302000 $")
 
 #include <swift.h>
 #if defined _SWIFT_VER_6
@@ -68,7 +69,8 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 301000 $")
                 <description>
                 <para>This application streams tts audio from the Cepstral swift engine and
                 will alternatively read DTMF into the ${SWIFT_DTMF} variable if the timeout
-                and digits options are used.</para>
+                and digits options are used.  You may change the voice dynamically by 
+                setting the channel variable SWIFT_VOICE.</para>
                 </description>
         </application>
  ***/
@@ -83,7 +85,8 @@ static char *synopsis = "Speak text through the Cepstral Swift text-to-speech en
 static char *descrip = 
 "This application streams tts audio from the Cepstral swift engine and\n"
 "will alternatively read DTMF into the ${SWIFT_DTMF} variable if the timeout\n"
-"and digits options are used.\n\n"
+"and digits options are used.  You may change the voice dynamically by\n"
+"setting the channel variable SWIFT_VOICE.\n\n"
 " Syntax: Swift(text[|timeout in ms][|maximum digits])\n";
 #endif
 
@@ -282,7 +285,7 @@ static char *listen_for_dtmf(struct ast_channel *chan, int timeout, int max_digi
 
 #if (defined _AST_VER_1_4 || defined _AST_VER_1_6)
 static int app_exec(struct ast_channel *chan, void *data)
-#elif (defined _AST_VER_1_8 || defined _AST_VER_10)
+#elif (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11)
 static int app_exec(struct ast_channel *chan, const char *data)
 #endif
 {
@@ -294,10 +297,24 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	struct ast_frame *f;
 	struct timeval next;
 	struct stuff *ps;
-#if defined _AST_VER_10
+	char *parse;
+#if (defined _AST_VER_10 || _AST_VER_11)
 	struct ast_format old_writeformat;
 #else
 	int old_writeformat = 0;
+#endif
+	parse = ast_strdupa(data);
+
+#if (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11)
+	AST_DECLARE_APP_ARGS(args,
+		AST_APP_ARG(text);
+		AST_APP_ARG(timeout);
+		AST_APP_ARG(max_digits);
+	);
+
+	AST_STANDARD_APP_ARGS(args, parse);
+#else
+	int argc = 0;
 #endif
 
 	struct myframe {
@@ -313,12 +330,25 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	swift_result_t sresult;
 	swift_background_t tts_stream;
 	unsigned int event_mask;
+	const char *vvoice = NULL;
 
 	memset(results, 0 ,20);
 	memset(tmp_exten, 0, 2);
 	memset(argv, 0, 3);
 
 	u = ast_module_user_add(chan);
+
+#if (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11)
+	if (!ast_strlen_zero(args.timeout)) {
+		timeout = strtol(args.timeout, NULL, 0);
+	}
+	if (!ast_strlen_zero(args.max_digits)) {
+		max_digits = strtol(args.max_digits, NULL, 0);
+	}
+	text = args.text;
+#else
+	/* found horribly broken by jkister 2013.01.24 -attempt to repair */
+	argc = ast_app_separate_args(parse, ',', argv, 3);
 	text = argv[0];
 
 	if (!ast_strlen_zero(argv[1])) {
@@ -327,11 +357,11 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	if (!ast_strlen_zero(argv[2])) {
 		max_digits = strtol(argv[2], NULL, 0);
 	}
+#endif
 	if (ast_strlen_zero(text)) {
 		ast_log(LOG_WARNING, "%s requires text to speak!\n", app);
 		return -1;
-	}
-	if (!ast_strlen_zero(text)) {
+	}else{
 		ast_log(LOG_DEBUG, "Text to Speak : %s\n", text);
 	}
 	if (timeout > 0) {
@@ -379,7 +409,13 @@ static int app_exec(struct ast_channel *chan, const char *data)
 		swift_register_ast_chan(port, chan);
 	}
 #endif
-	
+
+	/* allow exten => x,n,Set(SWIFT_VOICE=Callie) */
+	if ((vvoice = pbx_builtin_getvar_helper(chan, "SWIFT_VOICE"))) {
+		ast_copy_string(cfg_voice, vvoice, sizeof(cfg_voice));
+		ast_log(LOG_DEBUG, "Config voice is %s via SWIFT_VOICE\n", cfg_voice);
+	}
+
 	if ((voice = swift_port_set_voice_by_name(port, cfg_voice)) == NULL) {
 		ast_log(LOG_ERROR, "Failed to set voice.\n");
 		goto exception;
@@ -398,7 +434,11 @@ static int app_exec(struct ast_channel *chan, const char *data)
 		ast_log(LOG_ERROR, "Failed to speak.\n");
 		goto exception;
 	}
+#if defined _AST_VER_11
+	if (ast_channel_state(chan) != AST_STATE_UP) {
+#else
 	if (chan->_state != AST_STATE_UP) {
+#endif
 		ast_answer(chan);
 	}
 
@@ -410,6 +450,10 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	if (ast_set_write_format(chan, AST_FORMAT_ULAW) < 0) {
 #elif defined _AST_VER_10
 	ast_format_copy(&old_writeformat, &chan->writeformat);
+
+	if (ast_set_write_format_by_id(chan, AST_FORMAT_ULAW) < 0) {
+#elif defined _AST_VER_11
+	ast_format_copy(&old_writeformat, ast_channel_writeformat(chan));
 
 	if (ast_set_write_format_by_id(chan, AST_FORMAT_ULAW) < 0) {
 #endif
@@ -454,14 +498,16 @@ static int app_exec(struct ast_channel *chan, const char *data)
 				myf.f.frametype = AST_FRAME_VOICE;
 #if (defined _AST_VER_1_6 || defined _AST_VER_1_4)
 				myf.f.subclass = AST_FORMAT_ULAW;
-#elif defined _AST_VER_1_8
+#elif defined _AST_VER_1_8 
 				myf.f.subclass.codec = AST_FORMAT_ULAW;
+#elif (defined _AST_VER_10 || defined _AST_VER_11)
+				ast_format_set(&myf.f.subclass.format, AST_FORMAT_ULAW, 0);
 #endif
 				myf.f.datalen = len;
 				myf.f.samples = len;
 #if defined _AST_VER_1_4
 				myf.f.data = myf.frdata;
-#elif defined _AST_VER_1_6
+#else
 				myf.f.data.ptr = myf.frdata;
 #endif
 				myf.f.mallocd = 0;
@@ -508,7 +554,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 					if (f->frametype == AST_FRAME_DTMF && timeout > 0 && max_digits > 0) {
 #if (defined _AST_VER_1_6 || defined _AST_VER_1_4)
 						char originalDTMF = f->subclass;
-#elif (defined _AST_VER_1_8 || defined _AST_VER_10)
+#elif (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11)
 						char originalDTMF = f->subclass.integer;
 #endif
 						alreadyran = 1;
@@ -559,16 +605,27 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	}
 	if (max_digits >= 1 && results != NULL) {
 		if (cfg_goto_exten) {
+#ifdef _AST_VER_11
+			ast_log(LOG_NOTICE, "GoTo(%s|%s|%d) : ", ast_channel_context(chan), results, 1);
+#else
 			ast_log(LOG_NOTICE, "GoTo(%s|%s|%d) : ", chan->context, results, 1);
+#endif
 
 #if (defined _AST_VER_1_6 || defined _AST_VER_1_4)
 			if (ast_exists_extension (chan, chan->context, results, 1, chan->cid.cid_num)) {
 #elif (defined _AST_VER_1_8 || defined _AST_VER_10)
 			 if (ast_exists_extension (chan, chan->context, results, 1, chan->caller.id.number.str)) {
+#elif defined _AST_VER_11
+			 if (ast_exists_extension (chan, ast_channel_context(chan), results, 1, ast_channel_caller(chan)->id.number.str)) {
 #endif
 				ast_log(LOG_NOTICE, "OK\n");
+#if defined _AST_VER_11
+				ast_channel_exten_set(chan, results);
+				ast_channel_priority_set(chan, 0);
+#else
 				ast_copy_string(chan->exten, results, sizeof(chan->exten) - 1);
 				chan->priority = 0;
+#endif
 			} else {
 				ast_log(LOG_NOTICE, "FAILED\n");
 			}
@@ -595,7 +652,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	if (!res && old_writeformat) {
 		ast_set_write_format(chan, old_writeformat);
 	}
-#elif defined _AST_VER_10
+#elif (defined _AST_VER_10 || defined _AST_VER_11)
 	if (!res) {
 		ast_set_write_format(chan, &old_writeformat);
 	}
@@ -619,7 +676,7 @@ static int load_module(void)
 	int res = 0;
 	const char *val = NULL;
 	struct ast_config *cfg;
-#if  (defined _AST_VER_1_6 || defined _AST_VER_1_8 || defined _AST_VER_10)
+#if  (defined _AST_VER_1_6 || defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11)
 	struct ast_flags config_flags = { CONFIG_FLAG_NOCACHE };
 #endif
 
@@ -633,14 +690,14 @@ static int load_module(void)
 
 #if (defined _AST_VER_1_6 || defined _AST_VER_1_4)
 	res = ast_register_application(app, app_exec, synopsis, descrip) ?
-#elif (defined _AST_VER_1_8 || defined _AST_VER_10)
+#elif (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11)
 	res = ast_register_application_xml(app, app_exec) ?
 #endif
 		AST_MODULE_LOAD_DECLINE : AST_MODULE_LOAD_SUCCESS;
 
 #if defined _AST_VER_1_4
 	cfg = ast_config_load(SWIFT_CONFIG_FILE);
-#elif (defined _AST_VER_1_6 || defined _AST_VER_1_8 || defined _AST_VER_10)
+#elif (defined _AST_VER_1_6 || defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11)
 	cfg = ast_config_load(SWIFT_CONFIG_FILE, config_flags);
 #endif
 
