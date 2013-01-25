@@ -326,6 +326,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	swift_result_t sresult;
 	swift_background_t tts_stream;
 	unsigned int event_mask;
+	const char *vvoice = NULL;
 
 	memset(results, 0 ,20);
 	memset(tmp_exten, 0, 2);
@@ -402,7 +403,13 @@ static int app_exec(struct ast_channel *chan, const char *data)
 		swift_register_ast_chan(port, chan);
 	}
 #endif
-	
+
+	/* allow exten => x,n,Set(SWIFT_VOICE=Callie) */
+	if ((vvoice = pbx_builtin_getvar_helper(chan, "SWIFT_VOICE"))) {
+		ast_copy_string(cfg_voice, vvoice, sizeof(cfg_voice));
+		ast_log(LOG_DEBUG, "Config voice is %s via SWIFT_VOICE\n", cfg_voice);
+	}
+
 	if ((voice = swift_port_set_voice_by_name(port, cfg_voice)) == NULL) {
 		ast_log(LOG_ERROR, "Failed to set voice.\n");
 		goto exception;
