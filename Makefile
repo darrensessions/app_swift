@@ -45,6 +45,7 @@ AST_FULL_VER=$(shell \
 	fi \
 )
 
+# this is all a hack, have to convert to use ast_version.h 
 AST_MAJOR_VER=$(shell \
 	if [ $(findstring 104, $(AST_FULL_VER)) ]; then \
 		echo "-D_AST_VER_1_4"; \
@@ -55,7 +56,6 @@ AST_MAJOR_VER=$(shell \
 	elif [ $(findstring 100, $(AST_FULL_VER)) ]; then \
 		echo "-D_AST_VER_10"; \
 	else \
-		# this is all a hack, have to convert to use ast_version.h 
 		echo "-D_AST_VER_11"; \
 	fi \
 )
