@@ -69,7 +69,8 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 301000 $")
                 <description>
                 <para>This application streams tts audio from the Cepstral swift engine and
                 will alternatively read DTMF into the ${SWIFT_DTMF} variable if the timeout
-                and digits options are used.</para>
+                and digits options are used.  You may change the voice dynamically by 
+                setting the channel variable SWIFT_VOICE.</para>
                 </description>
         </application>
  ***/
@@ -84,7 +85,8 @@ static char *synopsis = "Speak text through the Cepstral Swift text-to-speech en
 static char *descrip = 
 "This application streams tts audio from the Cepstral swift engine and\n"
 "will alternatively read DTMF into the ${SWIFT_DTMF} variable if the timeout\n"
-"and digits options are used.\n\n"
+"and digits options are used.  You may change the voice dynamically by\n"
+"setting the channel variable SWIFT_VOICE.\n\n"
 " Syntax: Swift(text[|timeout in ms][|maximum digits])\n";
 #endif
 
