@@ -54,6 +54,8 @@ AST_MAJOR_VER=$(shell \
 		echo "-D_AST_VER_1_8"; \
 	elif [ $(findstring 100, $(AST_FULL_VER)) ]; then \
 		echo "-D_AST_VER_10"; \
+	else \
+		echo "-D_AST_VER_11"; \
 	fi \
 )
 
