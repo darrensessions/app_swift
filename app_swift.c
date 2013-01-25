@@ -297,22 +297,24 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	struct ast_frame *f;
 	struct timeval next;
 	struct stuff *ps;
+	char *parse;
 #if (defined _AST_VER_10 || _AST_VER_11)
 	struct ast_format old_writeformat;
 #else
 	int old_writeformat = 0;
 #endif
+	parse = ast_strdupa(data);
 
 #if (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11)
-	char *parse;
 	AST_DECLARE_APP_ARGS(args,
 		AST_APP_ARG(text);
 		AST_APP_ARG(timeout);
 		AST_APP_ARG(max_digits);
 	);
 
-	parse = ast_strdupa(data);
 	AST_STANDARD_APP_ARGS(args, parse);
+#else
+	int argc = 0;
 #endif
 
 	struct myframe {
@@ -345,8 +347,10 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	}
 	text = args.text;
 #else
-	/* horribly broken jkister 2013.01.24 */
+	/* found horribly broken by jkister 2013.01.24 -attempt to repair */
+	argc = ast_app_separate_args(parse, ',', argv, 3);
 	text = argv[0];
+
 	if (!ast_strlen_zero(argv[1])) {
 		timeout = strtol(argv[1], NULL, 0);
 	}
