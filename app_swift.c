@@ -31,7 +31,7 @@
  ***/
 
 #include "asterisk.h"
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 302000 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision: 303000 $")
 
 #include <swift.h>
 #if defined _SWIFT_VER_6
@@ -305,7 +305,6 @@ static int app_exec(struct ast_channel *chan, const char *data)
 #endif
 	parse = ast_strdupa(data);
 
-#if (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11)
 	AST_DECLARE_APP_ARGS(args,
 		AST_APP_ARG(text);
 		AST_APP_ARG(timeout);
@@ -313,9 +312,6 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	);
 
 	AST_STANDARD_APP_ARGS(args, parse);
-#else
-	int argc = 0;
-#endif
 
 	struct myframe {
 		struct ast_frame f;
@@ -338,7 +334,6 @@ static int app_exec(struct ast_channel *chan, const char *data)
 
 	u = ast_module_user_add(chan);
 
-#if (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11)
 	if (!ast_strlen_zero(args.timeout)) {
 		timeout = strtol(args.timeout, NULL, 0);
 	}
@@ -346,18 +341,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 		max_digits = strtol(args.max_digits, NULL, 0);
 	}
 	text = args.text;
-#else
-	/* found horribly broken by jkister 2013.01.24 -attempt to repair */
-	argc = ast_app_separate_args(parse, ',', argv, 3);
-	text = argv[0];
 
-	if (!ast_strlen_zero(argv[1])) {
-		timeout = strtol(argv[1], NULL, 0);
-	}
-	if (!ast_strlen_zero(argv[2])) {
-		max_digits = strtol(argv[2], NULL, 0);
-	}
-#endif
 	if (ast_strlen_zero(text)) {
 		ast_log(LOG_WARNING, "%s requires text to speak!\n", app);
 		return -1;
