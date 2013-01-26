@@ -1,6 +1,7 @@
 #  app_swift -- A Cepstral Swift TTS engine interface
 # 
 #  Copyright (C) 2006 - 2011, Darren Sessions
+#  Asterisk 11 additions/several fixes by Jeremy Kister 2013.01.24
 # 
 #  Darren Sessions <darrensessions@me.com>
 #
@@ -39,24 +40,14 @@ CFLAGS+=-D_SWIFT_VER_$(shell \
 AST_INC_CHECK=$(shell if [ -f $(AST_INC_DIR)/channel.h ]; then echo "$(NAME).so"; else echo "ast_inc_fail"; fi)
 
 AST_FULL_VER=$(shell \
-	if [ -f $(AST_VER_HDR) ]; then \
-		grep ASTERISK_VERSION_NUM $(AST_VER_HDR) | sed -e "s/\#define\ ASTERISK_VERSION_NUM\ //" - | awk -F. '{printf "%02d", $$1}' -; \
-	else echo "Unable to locate the required Asterisk version.h include file at '$(AST_VER_HDR)'"; \
-	fi \
+	asterisk -V | awk '{ print $$2 }' -; \
 )
 
-# this is all a hack, have to convert to use ast_version.h 
 AST_MAJOR_VER=$(shell \
-	if [ $(findstring 104, $(AST_FULL_VER)) ]; then \
-		echo "-D_AST_VER_1_4"; \
-	elif [ $(findstring 106, $(AST_FULL_VER)) ]; then \
-		echo "-D_AST_VER_1_6"; \
-	elif [ $(findstring 108, $(AST_FULL_VER)) ]; then \
-		echo "-D_AST_VER_1_8"; \
-	elif [ $(findstring 100, $(AST_FULL_VER)) ]; then \
-		echo "-D_AST_VER_10"; \
+	if [ `echo $(AST_FULL_VER) | awk -F\. '{ print $$1 }'` -eq 1 ] ; then \
+		echo $(AST_FULL_VER) | awk -F\. '{ print $$1 "_" $$2 }' -; \
 	else \
-		echo "-D_AST_VER_11"; \
+		echo $(AST_FULL_VER) | awk -F\. '{ print $$1 }' -; \
 	fi \
 )
 
@@ -64,7 +55,7 @@ ifeq ($(AST_MAJOR_VER),)
 	AST_VER_CHECK=ast_ver_fail
 else
 	AST_VER_CHECK=
-	CFLAGS+= $(AST_MAJOR_VER)
+	CFLAGS+=-D_AST_VER_$(AST_MAJOR_VER)
 endif
 
 
@@ -116,5 +107,5 @@ install: all
 	fi
 
 reload: install
-	asterisk -rx "module unload ${RES}"
-	asterisk -rx "module load ${RES}"
+	asterisk -rx "module unload $(NAME)"
+	asterisk -rx "module load $(NAME)"
