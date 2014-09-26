@@ -54,7 +54,7 @@ all: banner $(AST_INC_CHECK) $(AST_VER_CHECK)
 	@echo ""
 
 $(NAME).so : $(NAME).o
-	$(CC) $(SOLINK) -o $@ $(LDFLAGS) $<
+	$(CC) $(SOLINK) -o $@ $< $(LDFLAGS)
 
 banner:
 	@echo ""
