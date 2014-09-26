@@ -1,0 +1,163 @@
+#!/bin/sh
+
+#  app_swift -- A Cepstral Swift TTS engine interface
+# 
+#  Copyright (C) 2006 - 2011, Darren Sessions
+#  Asterisk 11 additions/several fixes by Jeremy Kister 2013.01.24
+# 
+#  Darren Sessions <darrensessions@me.com>
+#
+#  http://www.twitter.com/darrensessions
+#  http://www.linkedin.com/in/dsessions
+# 
+#  This program is free software, distributed under the
+#  terms of the GNU General Public License Version 2. See
+#  the LICENSE file at the top of the source tree for more
+#  information.
+
+usage() {
+    cat <<__EOU__
+'configure' configures app_swift to adapt to many kinds of systems.
+
+Usage: [VAR=VALUE]... ./configure [OPTION]...
+
+To assign environment variables (e.g., CC, CFLAGS...), specify them as
+VAR=VALUE.  See below for descriptions of some of the useful variables.
+
+Defaults for the options are specified in brackets.
+
+Configuration:
+    --help          this help message
+    --swiftdir      directory to swift [/opt/swift]
+    --includedir    system include directory [/usr/include]
+    --libdir        system library directory [/usr/lib]
+    --sysconfdir    asterisk etc directory [/etc/asterisk]
+
+
+Some influential environment variables:
+  CC          C compiler command
+  CFLAGS      C compiler flags
+  LDFLAGS     linker flags, e.g. -L<lib dir> if you have libraries in a
+              nonstandard directory <lib dir>
+  LIBS        libraries to pass to the linker, e.g. -l<library>
+
+Use these variables to override the choices made by 'configure' or to help
+it to find libraries and programs with nonstandard names/locations.
+
+Report bugs to <https://github.com/dmsessions/app_swift/issues>
+
+__EOU__
+}
+
+while getopts ':h-' OPTION ; do
+    case "$OPTION" in
+        h)
+            usage
+            exit
+            ;;
+        -)
+            [ $OPTIND -ge 1 ] && optind=`expr $OPTIND - 1` || optind=$OPTIND
+            eval OPTION="\$$optind"
+            OPTARG=`echo $OPTION | cut -d'=' -f2`
+            OPTION=`echo $OPTION | cut -d'=' -f1`
+            case "$OPTION" in
+                --swiftdir)
+                    SWIFT_DIR=$OPTARG
+                    ;;
+                --includedir)
+                    INC_DIR=$OPTARG
+                    ;;
+                --libdir)
+                    LIB_DIR=$OPTARG
+                    ;;
+                --sysconfdir)
+                    AST_CFG=$OPTARG
+                    ;;
+                --help)
+                    usage
+                    exit
+                    ;;
+                *)
+                    echo "invalid argument: $OPTION"
+                    echo "use ./configure --help"
+                    exit 1
+                    ;;
+            esac
+            OPTIND=1
+            shift
+            ;;
+        *)
+            echo "invalid argument: $OPTION"
+            echo "use ./configure --help"
+            exit 1
+            ;;
+    esac
+done
+
+CC=${CC-gcc}
+echo "checking $CC..."
+echo 'int main(void){return 0;}' > astest.c
+$CC -o astest astest.c
+code=$?
+rm astest astest.c
+if [ $code -gt 0 ] ; then
+    echo "problem with compiler/$CC."
+    exit 1
+fi
+
+echo "checking swift..."
+SWIFT_VER=`swift --version | grep "Cepstral Swift " - | sed -e "s/Cepstral\ Swift\ //" | awk -F. '{printf "%01d", $1}' -`
+echo "checking asterisk..."
+AST_FULL_VER=`asterisk -V | awk '{ print $2 }' -`
+
+if [ ! $SWIFT_VER ] ; then
+    echo "problem with swift.  check PATH?"
+    exit 1
+fi
+if [ ! $AST_FULL_VER ] ; then
+    echo "problem with asterisk.  check PATH?"
+    exit 1
+fi
+
+SOLINK="-shared -Xlinker -x"
+if [ $CC = gcc ] ; then
+    CC_VER=`$CC -dumpversion`
+    set -- `echo $CC_VER | awk -F\. '{ print $1 " " $2 " " $3 }' -`
+    CC_MAJOR=$1
+    CC_MINOR=$2
+    CC_PATCH=$3
+    if [ $CC_MAJOR -gt 4 ] || [ $CC_MAJOR -eq 4 -a $CC_MINOR -ge 6 ] ; then
+        # http://www.j-mb.de/blog/tag/undefined-symbol-swift_port_close/
+        SOLINK="$SOLINK -Wl,--no-as-needed"
+    fi
+fi
+
+if [ "`echo $AST_FULL_VER | awk -F\. '{ print $1 }' -`" -eq 1 ] ; then
+    AST_MAJOR_VER=`echo $AST_FULL_VER | awk -F\. '{ print $1 "_" $2 }' -`
+else
+    AST_MAJOR_VER=`echo $AST_FULL_VER | awk -F\. '{ print $1 }' -`
+fi
+
+SWIFT_DIR=${SWIFT_DIR-/opt/swift}
+SYS_LIB=${LIB_DIR-/usr/lib}
+SYS_INC=${INC_DIR-/usr/include}
+AST_CFG=${AST_CFG-/etc/asterisk}
+
+echo "creating Makefile"
+cat Makefile.in | sed -e \
+ "s/%%CC%%/$CC/g; \
+  s/%%SOLINK%%/$SOLINK/g; \
+  s/%%SWIFT_VER%%/$SWIFT_VER/g; \
+  s/%%AST_FULL_VER%%/$AST_FULL_VER/g; \
+  s/%%AST_MAJOR_VER%%/$AST_MAJOR_VER/g; \
+  s!%%SWIFT_DIR%%!$SWIFT_DIR!g; \
+  s!%%SYS_LIB%%!$SYS_LIB!g; \
+  s!%%SYS_INC%%!$SYS_INC!g; \
+  s!%%AST_CFG%%!$AST_CFG!g;" \
+ > Makefile
+
+
+echo "  ********************************************************"
+echo "  *  Now run 'make' to compile app_swift                 *"
+echo "  ********************************************************"
+
