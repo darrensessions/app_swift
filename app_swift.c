@@ -589,7 +589,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	}
 	if (max_digits >= 1 && results != NULL) {
 		if (cfg_goto_exten) {
-#if (defined _AST_VER_11 ||)
+#if (defined _AST_VER_11)
 			ast_log(LOG_NOTICE, "GoTo(%s|%s|%d) : ", ast_channel_context(chan), results, 1);
 #else
 			ast_log(LOG_NOTICE, "GoTo(%s|%s|%d) : ", chan->context, results, 1);
