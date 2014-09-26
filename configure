@@ -3,7 +3,7 @@
 #  app_swift -- A Cepstral Swift TTS engine interface
 # 
 #  Copyright (C) 2006 - 2011, Darren Sessions
-#  Asterisk 11 additions/several fixes by Jeremy Kister 2013.01.24
+#  Asterisk 11 additions/several fixes by Jeremy Kister 2013-2014
 # 
 #  Darren Sessions <darrensessions@me.com>
 #
@@ -97,6 +97,11 @@ done
 CC=${CC-gcc}
 echo "checking $CC..."
 echo 'int main(void){return 0;}' > astest.c
+if [ $? -gt 0 ] ; then
+    echo "Could not test compiler!"
+    exit 1
+fi
+
 $CC -o astest astest.c
 code=$?
 rm astest astest.c
