@@ -298,7 +298,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	struct timeval next;
 	struct stuff *ps;
 	char *parse;
-#if (defined _AST_VER_10)
+#if (defined _AST_VER_10 || defined _AST_VER_11)
 	struct ast_format old_writeformat;
 #else
 	int old_writeformat = 0;
@@ -432,7 +432,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	old_writeformat = chan->writeformat;
 
 	if (ast_set_write_format(chan, AST_FORMAT_ULAW) < 0) {
-#elif defined _AST_VER_10
+#elif (defined _AST_VER_10)
 	ast_format_copy(&old_writeformat, &chan->writeformat);
 
 	if (ast_set_write_format_by_id(chan, AST_FORMAT_ULAW) < 0) {
