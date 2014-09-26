@@ -298,7 +298,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	struct timeval next;
 	struct stuff *ps;
 	char *parse;
-#if (defined _AST_VER_10 || _AST_VER_11)
+#if (defined _AST_VER_10 || defined _AST_VER_11)
 	struct ast_format old_writeformat;
 #else
 	int old_writeformat = 0;
@@ -418,7 +418,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 		ast_log(LOG_ERROR, "Failed to speak.\n");
 		goto exception;
 	}
-#if defined _AST_VER_11
+#if (defined _AST_VER_11)
 	if (ast_channel_state(chan) != AST_STATE_UP) {
 #else
 	if (chan->_state != AST_STATE_UP) {
@@ -432,11 +432,11 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	old_writeformat = chan->writeformat;
 
 	if (ast_set_write_format(chan, AST_FORMAT_ULAW) < 0) {
-#elif defined _AST_VER_10
+#elif (defined _AST_VER_10)
 	ast_format_copy(&old_writeformat, &chan->writeformat);
 
 	if (ast_set_write_format_by_id(chan, AST_FORMAT_ULAW) < 0) {
-#elif defined _AST_VER_11
+#elif (defined _AST_VER_11)
 	ast_format_copy(&old_writeformat, ast_channel_writeformat(chan));
 
 	if (ast_set_write_format_by_id(chan, AST_FORMAT_ULAW) < 0) {
@@ -589,7 +589,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	}
 	if (max_digits >= 1 && results != NULL) {
 		if (cfg_goto_exten) {
-#ifdef _AST_VER_11
+#if (defined _AST_VER_11)
 			ast_log(LOG_NOTICE, "GoTo(%s|%s|%d) : ", ast_channel_context(chan), results, 1);
 #else
 			ast_log(LOG_NOTICE, "GoTo(%s|%s|%d) : ", chan->context, results, 1);
@@ -599,11 +599,11 @@ static int app_exec(struct ast_channel *chan, const char *data)
 			if (ast_exists_extension (chan, chan->context, results, 1, chan->cid.cid_num)) {
 #elif (defined _AST_VER_1_8 || defined _AST_VER_10)
 			 if (ast_exists_extension (chan, chan->context, results, 1, chan->caller.id.number.str)) {
-#elif defined _AST_VER_11
+#elif (defined _AST_VER_11)
 			 if (ast_exists_extension (chan, ast_channel_context(chan), results, 1, ast_channel_caller(chan)->id.number.str)) {
 #endif
 				ast_log(LOG_NOTICE, "OK\n");
-#if defined _AST_VER_11
+#if (defined _AST_VER_11)
 				ast_channel_exten_set(chan, results);
 				ast_channel_priority_set(chan, 0);
 #else
