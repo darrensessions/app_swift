@@ -31,7 +31,7 @@
  ***/
 
 #include "asterisk.h"
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 303000 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision: 304000 $")
 
 #include <swift.h>
 #if defined _SWIFT_VER_6
@@ -46,6 +46,11 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 303000 $")
 #include "asterisk/pbx.h"
 #include "asterisk/app.h"
 #include "asterisk/file.h"
+
+#if (defined _AST_VER_13)
+#include "asterisk/format_cache.h"
+#endif
+
 
 /*** DOCUMENTATION
         <application name="Swift" language="en_US">
@@ -285,7 +290,7 @@ static char *listen_for_dtmf(struct ast_channel *chan, int timeout, int max_digi
 
 #if (defined _AST_VER_1_4 || defined _AST_VER_1_6)
 static int app_exec(struct ast_channel *chan, void *data)
-#elif (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11)
+#elif (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
 static int app_exec(struct ast_channel *chan, const char *data)
 #endif
 {
@@ -298,8 +303,10 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	struct timeval next;
 	struct stuff *ps;
 	char *parse;
-#if (defined _AST_VER_10 || _AST_VER_11)
+#if (defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12)
 	struct ast_format old_writeformat;
+#elif (defined _AST_VER_13)
+	RAII_VAR(struct ast_format *, old_writeformat, NULL, ao2_cleanup);
 #else
 	int old_writeformat = 0;
 #endif
@@ -389,15 +396,17 @@ static int app_exec(struct ast_channel *chan, const char *data)
 		/* 
 		 * This registers a chan with swift, otherwise through repeated DTMF+synth requests
 		 * a single call could consume all available concurrent synthesis ports.
-                 */
+		*/
 		swift_register_ast_chan(port, chan);
 	}
 #endif
 
+	ast_log(LOG_DEBUG, "Config voice is %s via %s\n", cfg_voice, SWIFT_CONFIG_FILE);
+
 	/* allow exten => x,n,Set(SWIFT_VOICE=Callie) */
 	if ((vvoice = pbx_builtin_getvar_helper(chan, "SWIFT_VOICE"))) {
 		ast_copy_string(cfg_voice, vvoice, sizeof(cfg_voice));
-		ast_log(LOG_DEBUG, "Config voice is %s via SWIFT_VOICE\n", cfg_voice);
+		ast_log(LOG_DEBUG, "Config voice override to %s via SWIFT_VOICE\n", cfg_voice);
 	}
 
 	if ((voice = swift_port_set_voice_by_name(port, cfg_voice)) == NULL) {
@@ -418,7 +427,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 		ast_log(LOG_ERROR, "Failed to speak.\n");
 		goto exception;
 	}
-#if defined _AST_VER_11
+#if (defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
 	if (ast_channel_state(chan) != AST_STATE_UP) {
 #else
 	if (chan->_state != AST_STATE_UP) {
@@ -432,14 +441,18 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	old_writeformat = chan->writeformat;
 
 	if (ast_set_write_format(chan, AST_FORMAT_ULAW) < 0) {
-#elif defined _AST_VER_10
+#elif (defined _AST_VER_10)
 	ast_format_copy(&old_writeformat, &chan->writeformat);
 
 	if (ast_set_write_format_by_id(chan, AST_FORMAT_ULAW) < 0) {
-#elif defined _AST_VER_11
+#elif (defined _AST_VER_11 || defined _AST_VER_12)
 	ast_format_copy(&old_writeformat, ast_channel_writeformat(chan));
 
 	if (ast_set_write_format_by_id(chan, AST_FORMAT_ULAW) < 0) {
+#elif (defined _AST_VER_13)
+	old_writeformat = ao2_bump(ast_channel_writeformat(chan));
+
+	if (ast_set_write_format(chan, ast_format_ulaw) < 0) {
 #endif
 		ast_log(LOG_WARNING, "Unable to set write format.\n");
 		goto exception;
@@ -484,8 +497,10 @@ static int app_exec(struct ast_channel *chan, const char *data)
 				myf.f.subclass = AST_FORMAT_ULAW;
 #elif defined _AST_VER_1_8 
 				myf.f.subclass.codec = AST_FORMAT_ULAW;
-#elif (defined _AST_VER_10 || defined _AST_VER_11)
+#elif (defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12)
 				ast_format_set(&myf.f.subclass.format, AST_FORMAT_ULAW, 0);
+#elif (defined _AST_VER_13)
+				myf.f.subclass.format = ast_format_ulaw;
 #endif
 				myf.f.datalen = len;
 				myf.f.samples = len;
@@ -538,7 +553,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 					if (f->frametype == AST_FRAME_DTMF && timeout > 0 && max_digits > 0) {
 #if (defined _AST_VER_1_6 || defined _AST_VER_1_4)
 						char originalDTMF = f->subclass;
-#elif (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11)
+#elif (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
 						char originalDTMF = f->subclass.integer;
 #endif
 						alreadyran = 1;
@@ -589,7 +604,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	}
 	if (max_digits >= 1 && results != NULL) {
 		if (cfg_goto_exten) {
-#ifdef _AST_VER_11
+#if (defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
 			ast_log(LOG_NOTICE, "GoTo(%s|%s|%d) : ", ast_channel_context(chan), results, 1);
 #else
 			ast_log(LOG_NOTICE, "GoTo(%s|%s|%d) : ", chan->context, results, 1);
@@ -599,11 +614,11 @@ static int app_exec(struct ast_channel *chan, const char *data)
 			if (ast_exists_extension (chan, chan->context, results, 1, chan->cid.cid_num)) {
 #elif (defined _AST_VER_1_8 || defined _AST_VER_10)
 			 if (ast_exists_extension (chan, chan->context, results, 1, chan->caller.id.number.str)) {
-#elif defined _AST_VER_11
+#elif (defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
 			 if (ast_exists_extension (chan, ast_channel_context(chan), results, 1, ast_channel_caller(chan)->id.number.str)) {
 #endif
 				ast_log(LOG_NOTICE, "OK\n");
-#if defined _AST_VER_11
+#if (defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
 				ast_channel_exten_set(chan, results);
 				ast_channel_priority_set(chan, 0);
 #else
@@ -636,10 +651,15 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	if (!res && old_writeformat) {
 		ast_set_write_format(chan, old_writeformat);
 	}
-#elif (defined _AST_VER_10 || defined _AST_VER_11)
+#elif (defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12)
 	if (!res) {
 		ast_set_write_format(chan, &old_writeformat);
 	}
+#elif (defined _AST_VER_13)
+	if (!res) {
+		ast_set_write_format(chan, old_writeformat);
+	}
+	ao2_cleanup(old_writeformat);
 #endif
 	ast_module_user_remove(u);
 	return res;
@@ -660,7 +680,7 @@ static int load_module(void)
 	int res = 0;
 	const char *val = NULL;
 	struct ast_config *cfg;
-#if  (defined _AST_VER_1_6 || defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11)
+#if  (defined _AST_VER_1_6 || defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
 	struct ast_flags config_flags = { CONFIG_FLAG_NOCACHE };
 #endif
 
@@ -674,14 +694,14 @@ static int load_module(void)
 
 #if (defined _AST_VER_1_6 || defined _AST_VER_1_4)
 	res = ast_register_application(app, app_exec, synopsis, descrip) ?
-#elif (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11)
+#elif (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
 	res = ast_register_application_xml(app, app_exec) ?
 #endif
 		AST_MODULE_LOAD_DECLINE : AST_MODULE_LOAD_SUCCESS;
 
 #if defined _AST_VER_1_4
 	cfg = ast_config_load(SWIFT_CONFIG_FILE);
-#elif (defined _AST_VER_1_6 || defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11)
+#elif (defined _AST_VER_1_6 || defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
 	cfg = ast_config_load(SWIFT_CONFIG_FILE, config_flags);
 #endif
 
