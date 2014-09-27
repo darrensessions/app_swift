@@ -3,7 +3,7 @@
 
   Copyright (C) 2006-2012 - Darren Sessions
   Portions Copyright (C) 2012, Cepstral LLC.
-  Asterisk 11 additions/several fixes by Jeremy Kister 2013.01.24
+  Portions Copyright (C) 2013-2014 - Jeremy Kister
 
  
   All rights reserved.
@@ -49,11 +49,12 @@
 
   Installation: 
                 
-		Check the makefile to be sure paths are correct
 		Check that the swift libraries are in your ld path
+         * on debian, run: echo -e "\n/opt/swift/lib\n" >> /etc/ld.so.conf && ldconfig
 		On some distributions you made need to copy asterisk.h to /usr/include
 
-                unpack
+		unpack
+        ./configure [options]
 		make
 		make install (as root)
 
