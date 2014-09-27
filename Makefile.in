@@ -81,7 +81,7 @@ ast_inc_fail:
 	@exit 1
 
 clean:
-	rm -f $(NAME).o $(NAME).so
+	rm -f Makefile $(NAME).o $(NAME).so
 
 install: all
 	if ! [ -f $(AST_CFG_DIR)/$(CONF) ]; then \
