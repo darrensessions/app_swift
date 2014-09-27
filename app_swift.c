@@ -306,7 +306,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 #if (defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12)
 	struct ast_format old_writeformat;
 #elif (defined _AST_VER_13)
-    RAII_VAR(struct ast_format *, old_writeformat, NULL, ao2_cleanup);
+	RAII_VAR(struct ast_format *, old_writeformat, NULL, ao2_cleanup);
 #else
 	int old_writeformat = 0;
 #endif
@@ -396,7 +396,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 		/* 
 		 * This registers a chan with swift, otherwise through repeated DTMF+synth requests
 		 * a single call could consume all available concurrent synthesis ports.
-                 */
+		*/
 		swift_register_ast_chan(port, chan);
 	}
 #endif
@@ -450,7 +450,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 
 	if (ast_set_write_format_by_id(chan, AST_FORMAT_ULAW) < 0) {
 #elif (defined _AST_VER_13)
-    old_writeformat = ao2_bump(ast_channel_writeformat(chan));
+	old_writeformat = ao2_bump(ast_channel_writeformat(chan));
 
 	if (ast_set_write_format(chan, ast_format_ulaw) < 0) {
 #endif
@@ -500,7 +500,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 #elif (defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12)
 				ast_format_set(&myf.f.subclass.format, AST_FORMAT_ULAW, 0);
 #elif (defined _AST_VER_13)
-                myf.f.subclass.format = ast_format_ulaw;
+				myf.f.subclass.format = ast_format_ulaw;
 #endif
 				myf.f.datalen = len;
 				myf.f.samples = len;
@@ -659,7 +659,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	if (!res) {
 		ast_set_write_format(chan, old_writeformat);
 	}
-    ao2_cleanup(old_writeformat);
+	ao2_cleanup(old_writeformat);
 #endif
 	ast_module_user_remove(u);
 	return res;
