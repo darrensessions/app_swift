@@ -2,7 +2,7 @@
 
 #  configure for app_swift -- A Cepstral Swift TTS engine interface
 # 
-#  Copyright (C) 2013 - 2014, Jeremy Kister
+#  Copyright (C) 2013 - 2016, Jeremy Kister
 # 
 #  This program is free software, distributed under the
 #  terms of the GNU General Public License Version 2. See
@@ -23,9 +23,10 @@ Defaults for the options are specified in brackets.
 Configuration:
     --help          this help message
     --swiftdir      directory to swift [/opt/swift]
-    --includedir    system include directory [/usr/include]
-    --libdir        system library directory [/usr/lib]
-    --sysconfdir    asterisk etc directory [/etc/asterisk]
+    --includedir    asterisk include directory [/usr/include]
+    --libdir        asterisk library directory [/usr/lib]
+    --vardir        asterisk var lib directory [/var/lib]
+    --sysconfdir    asterisk etc directory [/etc]
 
 
 Some influential environment variables:
@@ -61,11 +62,14 @@ while getopts ':h-' OPTION ; do
                 --includedir)
                     INC_DIR=$OPTARG
                     ;;
+                --vardir)
+                    VAR_DIR=$OPTARG
+                    ;;
                 --libdir)
                     LIB_DIR=$OPTARG
                     ;;
                 --sysconfdir)
-                    AST_CFG=$OPTARG
+                    CNF_DIR=$OPTARG
                     ;;
                 --help)
                     usage
@@ -138,9 +142,10 @@ else
 fi
 
 SWIFT_DIR=${SWIFT_DIR-/opt/swift}
-SYS_LIB=${LIB_DIR-/usr/lib}
-SYS_INC=${INC_DIR-/usr/include}
-AST_CFG=${AST_CFG-/etc/asterisk}
+VAR_DIR=${VAR_DIR-/var/lib}
+LIB_DIR=${LIB_DIR-/usr/lib}
+INC_DIR=${INC_DIR-/usr/include}
+CNF_DIR=${CNF_DIR-/etc}
 
 echo "creating Makefile"
 cat Makefile.in | sed -e \
@@ -150,9 +155,10 @@ cat Makefile.in | sed -e \
   s/%%AST_FULL_VER%%/$AST_FULL_VER/g; \
   s/%%AST_MAJOR_VER%%/$AST_MAJOR_VER/g; \
   s!%%SWIFT_DIR%%!$SWIFT_DIR!g; \
-  s!%%SYS_LIB%%!$SYS_LIB!g; \
-  s!%%SYS_INC%%!$SYS_INC!g; \
-  s!%%AST_CFG%%!$AST_CFG!g;" \
+  s!%%VAR_DIR%%!$VAR_DIR!g; \
+  s!%%LIB_DIR%%!$LIB_DIR!g; \
+  s!%%INC_DIR%%!$INC_DIR!g; \
+  s!%%CNF_DIR%%!$CNF_DIR!g;" \
  > Makefile
 
 

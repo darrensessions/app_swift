@@ -3,7 +3,7 @@
  *
  * Copyright (C) 2006 - 2012, Darren Sessions 
  * Portions Copyright (C) 2012, Cepstral LLC.
- * Asterisk 11 additions/several fixes by Jeremy Kister 2013.01.24
+ * Portions Copyright (C) 2013 - 2016, Jeremy Kister 
  *
  * All rights reserved.
  * 
@@ -26,12 +26,13 @@
  */
 
 /*** MODULEINFO
+        <support_level>extended</support_level>
         <defaultenabled>no</defaultenabled>
         <depend>swift</depend>
  ***/
 
 #include "asterisk.h"
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 304000 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision: 305000 $")
 
 #include <swift.h>
 #if defined _SWIFT_VER_6
@@ -55,11 +56,12 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 304000 $")
 /*** DOCUMENTATION
         <application name="Swift" language="en_US">
                 <synopsis>
-                        Speak text through Swift text-to-speech engine (without writing files)
-                        and optionally listen for DTMF.
+                        Swift TTS engine and optionally listen for DTMF.
                 </synopsis>
                 <syntax>
-                        <parameter name="'text'" required="true"/>
+                        <parameter name="text" required="true">
+                                <para>Text to Speak.</para>
+                        </parameter>
                         <parameter name="options">
                                 <optionlist>
                                         <option name="timeout">
@@ -72,10 +74,17 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 304000 $")
                         </parameter>
                 </syntax>
                 <description>
-                <para>This application streams tts audio from the Cepstral swift engine and
-                will alternatively read DTMF into the ${SWIFT_DTMF} variable if the timeout
-                and digits options are used.  You may change the voice dynamically by 
-                setting the channel variable SWIFT_VOICE.</para>
+                    <para>This application streams tts audio from the Cepstral swift engine and will additionally read DTMF into the ${SWIFT_DTMF} variable if the timeout and digits options are used.  You may change the voice dynamically by setting the channel variable SWIFT_VOICE.</para>
+                    <para></para>
+                    <para>in extensions.conf:</para>
+				    <para>exten => s,1,Answer</para>
+				    <para>exten => s,n,Swift(This is Swift talking in the default voice from swift.conf)</para>
+				    <para>exten => s,n,Set(SWIFT_VOICE=Callie-8kHz)</para>
+				    <para>exten => s,n,Swift(This is Swift talking in the Callie voice)</para>
+				    <para>exten => s,n,Swift(Please enter three digits,5000,3)</para>
+				    <para>exten => s,n,Swift(You entered ${SWIFT_DTMF}.  Goodbye)</para>
+				    <para>exten => s,n,Hangup</para>
+                    </para>
                 </description>
         </application>
  ***/
@@ -84,9 +93,7 @@ static char *app = "Swift";
 
 #if (defined _AST_VER_1_4 || defined _AST_VER_1_6)
 static char *synopsis = "Speak text through the Cepstral Swift text-to-speech engine.";
-#endif
 
-#if (defined _AST_VER_1_4 || defined _AST_VER_1_6)
 static char *descrip = 
 "This application streams tts audio from the Cepstral swift engine and\n"
 "will alternatively read DTMF into the ${SWIFT_DTMF} variable if the timeout\n"
@@ -95,7 +102,8 @@ static char *descrip =
 " Syntax: Swift(text[|timeout in ms][|maximum digits])\n";
 #endif
 
-const int framesize = 20;
+#define FRAMESIZE 20
+const int framesize = FRAMESIZE;
 
 #define AST_MODULE "app_swift"
 #define SWIFT_CONFIG_FILE "swift.conf"
@@ -295,7 +303,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 #endif
 {
 	int res = 0, max_digits = 0, timeout = 0, alreadyran = 0;
-	int ms, len, availatend;
+	int ms = -1, len = 0, availatend = 0;
 	char *argv[3], *text = NULL, *rc = NULL;
 	char tmp_exten[2], results[20];
 	struct ast_module_user *u;
@@ -322,9 +330,11 @@ static int app_exec(struct ast_channel *chan, const char *data)
 
 	struct myframe {
 		struct ast_frame f;
-		unsigned char offset[AST_FRIENDLY_OFFSET];
-		unsigned char frdata[framesize];
-	} myf;
+		char offset[AST_FRIENDLY_OFFSET];
+		short frdata[FRAMESIZE];
+	} myf = {
+        .f = { 0, },
+    };
 
 	swift_engine *engine;
 	swift_port *port = NULL;
@@ -362,7 +372,10 @@ static int app_exec(struct ast_channel *chan, const char *data)
 		ast_log(LOG_DEBUG, "Max Digits : %d\n", max_digits);
 	}
 
-	ps = malloc(sizeof(struct stuff));
+	if( (ps = malloc(sizeof(struct stuff))) == NULL ){
+		ast_log(LOG_WARNING, "malloc fail! - memory problem?\n");
+        goto exception;
+    }
 	swift_init_stuff(ps);
 
 	/* Setup synthesis */
@@ -516,6 +529,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 				myf.f.delivery.tv_usec = 0;
 
 				if (ast_write(chan, &myf.f) < 0) {
+                    res = -1;
 					ast_log(LOG_DEBUG, "ast_write failed\n");
 				}
 
