@@ -111,7 +111,8 @@ fi
 echo "checking swift..."
 SWIFT_VER=`swift --version | grep "Cepstral Swift " - | sed -e "s/Cepstral\ Swift\ //" | awk -F. '{printf "%01d", $1}' -`
 echo "checking asterisk..."
-AST_FULL_VER=`asterisk -V | awk '{ print $2 }' -`
+# erase certified word from "Asterisk certified/13.1-cert8"
+AST_FULL_VER=`asterisk -V | awk '{ print $2 }' - | sed -e "#certified/##"`
 
 if [ ! $SWIFT_VER ] ; then
     echo "problem with swift.  check PATH?"
