@@ -107,7 +107,7 @@ fi
 echo "checking swift..."
 SWIFT_VER=`swift --version | grep "Cepstral Swift " - | sed -e "s/Cepstral\ Swift\ //" | awk -F. '{printf "%01d", $1}' -`
 echo "checking asterisk..."
-AST_FULL_VER=`asterisk -V | awk '{ print $2 }' -`
+AST_FULL_VER=`asterisk -V | awk '{ print $2 }' - | awk -F/ '{ print $NF }' -`
 
 if [ ! $SWIFT_VER ] ; then
     echo "problem with swift.  check PATH?"
