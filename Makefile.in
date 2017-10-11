@@ -27,7 +27,7 @@ AST_MOD_DIR=$(SYS_LIB_DIR)/asterisk/modules
 AST_INC_DIR=$(SYS_INC_DIR)/asterisk
 AST_CFG_DIR=%%AST_CFG%%
 
-CFLAGS=-I${SWIFT_DIR}/include -I${SYS_INC_DIR} -g -Wall -fPIC
+CFLAGS=-I${SWIFT_DIR}/include -I${SYS_INC_DIR} -g -Wall -fPIC -DAST_MODULE_SELF_SYM="__internal_app_swift"
 LDFLAGS=-L${SWIFT_DIR}/lib -L${SYS_LIB_DIR} -lswift $(patsubst ${SWIFT_DIR}/lib/lib%.so,-l%,$(wildcard ${SWIFT_DIR}/lib/libcep*.so))
 SOLINK=%%SOLINK%%
 
