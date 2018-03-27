@@ -136,6 +136,12 @@ install: all
 	else \
 		echo "XML docs not found - no problem, won't install ours." ; \
 	fi
+	@if ! grep 'swift' /etc/ld.so.conf 2>&1 >/dev/null ; then \
+		echo -e "\n$(SWIFT_DIR)/lib\n" >> /etc/ld.so.conf ; \
+		ldconfig ; \
+	fi
+	@ln -sf $(SWIFT_DIR)/include/* $(SYS_INC_DIR)
+
 
 	@echo ""
 	@echo "  ********************************************************"
@@ -144,5 +150,5 @@ install: all
 	@echo ""
 
 reload:
-	-asterisk -rx "module unload $(NAME)"
+	asterisk -rx "module unload $(NAME)"
 	asterisk -rx "module load $(NAME)"
