@@ -57,6 +57,7 @@ ifeq ($(AST_MAJOR_VER),)
 else
 	AST_VER_CHECK=
 	CFLAGS+=-D_AST_VER_$(AST_MAJOR_VER)
+	CFLAGS+=-D_AST_MAJ_VER=$(AST_MAJOR_VER)
 endif
 
 all: banner $(AST_INC_CHECK) $(AST_VER_CHECK) built $(BUILD) made-msg
