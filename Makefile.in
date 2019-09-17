@@ -57,6 +57,7 @@ ifeq ($(AST_MAJOR_VER),)
 else
 	AST_VER_CHECK=
 	CFLAGS+=-D_AST_VER_$(AST_MAJOR_VER)
+	CFLAGS+=-D_AST_MAJ_VER=$(AST_MAJOR_VER)
 endif
 
 all: banner $(AST_INC_CHECK) $(AST_VER_CHECK) built $(BUILD) made-msg
@@ -136,6 +137,12 @@ install: all
 	else \
 		echo "XML docs not found - no problem, won't install ours." ; \
 	fi
+	@if ! grep 'swift' /etc/ld.so.conf 2>&1 >/dev/null ; then \
+		echo -e "\n$(SWIFT_DIR)/lib\n" >> /etc/ld.so.conf ; \
+		ldconfig ; \
+	fi
+	@ln -sf $(SWIFT_DIR)/include/* $(SYS_INC_DIR)
+
 
 	@echo ""
 	@echo "  ********************************************************"
@@ -144,5 +151,5 @@ install: all
 	@echo ""
 
 reload:
-	-asterisk -rx "module unload $(NAME)"
+	asterisk -rx "module unload $(NAME)"
 	asterisk -rx "module load $(NAME)"
