@@ -91,7 +91,6 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 305000 $")
 				    <para>exten => s,n,Swift(Please enter three digits,5000,3)</para>
 				    <para>exten => s,n,Swift(You entered ${SWIFT_DTMF}.  Goodbye)</para>
 				    <para>exten => s,n,Hangup</para>
-                    </para>
                 </description>
         </application>
  ***/
