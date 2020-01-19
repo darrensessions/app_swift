@@ -3,7 +3,7 @@
  *
  * Copyright (C) 2006 - 2012, Darren Sessions 
  * Portions Copyright (C) 2012, Cepstral LLC.
- * Asterisk 11 additions/several fixes by Jeremy Kister 2013.01.24
+ * Portions Copyright (C) 2013 - 2016, Jeremy Kister 
  *
  * All rights reserved.
  * 
@@ -26,12 +26,16 @@
  */
 
 /*** MODULEINFO
+        <support_level>extended</support_level>
         <defaultenabled>no</defaultenabled>
         <depend>swift</depend>
  ***/
 
+#define AST_MODULE_SELF_SYM __app_swift_sym
 #include "asterisk.h"
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 304000 $")
+#if (_AST_MAJ_VER <= 13)
+ASTERISK_FILE_VERSION(__FILE__, "$Revision: 305000 $")
+#endif
 
 #include <swift.h>
 #if defined _SWIFT_VER_6
@@ -40,14 +44,18 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 304000 $")
 
 #include <math.h>
 
+#if (_AST_MAJ_VER <= 15)
 #include "asterisk/astobj.h"
+#else
+#include "asterisk/astobj2.h"
+#endif
 #include "asterisk/channel.h"
 #include "asterisk/module.h"
 #include "asterisk/pbx.h"
 #include "asterisk/app.h"
 #include "asterisk/file.h"
 
-#if (defined _AST_VER_13)
+#if (_AST_MAJ_VER >= 13)
 #include "asterisk/format_cache.h"
 #endif
 
@@ -55,11 +63,12 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 304000 $")
 /*** DOCUMENTATION
         <application name="Swift" language="en_US">
                 <synopsis>
-                        Speak text through Swift text-to-speech engine (without writing files)
-                        and optionally listen for DTMF.
+                        Swift TTS engine and optionally listen for DTMF.
                 </synopsis>
                 <syntax>
-                        <parameter name="'text'" required="true"/>
+                        <parameter name="text" required="true">
+                                <para>Text to Speak.</para>
+                        </parameter>
                         <parameter name="options">
                                 <optionlist>
                                         <option name="timeout">
@@ -72,10 +81,16 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 304000 $")
                         </parameter>
                 </syntax>
                 <description>
-                <para>This application streams tts audio from the Cepstral swift engine and
-                will alternatively read DTMF into the ${SWIFT_DTMF} variable if the timeout
-                and digits options are used.  You may change the voice dynamically by 
-                setting the channel variable SWIFT_VOICE.</para>
+                    <para>This application streams tts audio from the Cepstral swift engine and will additionally read DTMF into the ${SWIFT_DTMF} variable if the timeout and digits options are used.  You may change the voice dynamically by setting the channel variable SWIFT_VOICE.</para>
+                    <para></para>
+                    <para>in extensions.conf:</para>
+				    <para>exten => s,1,Answer</para>
+				    <para>exten => s,n,Swift(This is Swift talking in the default voice from swift.conf)</para>
+				    <para>exten => s,n,Set(SWIFT_VOICE=Callie-8kHz)</para>
+				    <para>exten => s,n,Swift(This is Swift talking in the Callie voice)</para>
+				    <para>exten => s,n,Swift(Please enter three digits,5000,3)</para>
+				    <para>exten => s,n,Swift(You entered ${SWIFT_DTMF}.  Goodbye)</para>
+				    <para>exten => s,n,Hangup</para>
                 </description>
         </application>
  ***/
@@ -84,9 +99,7 @@ static char *app = "Swift";
 
 #if (defined _AST_VER_1_4 || defined _AST_VER_1_6)
 static char *synopsis = "Speak text through the Cepstral Swift text-to-speech engine.";
-#endif
 
-#if (defined _AST_VER_1_4 || defined _AST_VER_1_6)
 static char *descrip = 
 "This application streams tts audio from the Cepstral swift engine and\n"
 "will alternatively read DTMF into the ${SWIFT_DTMF} variable if the timeout\n"
@@ -95,11 +108,14 @@ static char *descrip =
 " Syntax: Swift(text[|timeout in ms][|maximum digits])\n";
 #endif
 
-const int framesize = 20;
+#define FRAMESIZE 20
+const int framesize = FRAMESIZE;
 
 #define AST_MODULE "app_swift"
 #define SWIFT_CONFIG_FILE "swift.conf"
 #define dtmf_codes 12
+/* following lead from other dev's: https://github.com/asterisk/asterisk/commit/e04607f8a327363aed79e794bd5dc1cdbb9a54e8#diff-d6e336fe459624be3a7b782f27b3acddR52 */
+#define STUFF_NAME_LEN 80
 
 static unsigned int cfg_buffer_size;
 static int cfg_goto_exten;
@@ -107,7 +123,11 @@ static int samplerate;
 static char cfg_voice[20];
 
 struct stuff {
+#if (_AST_MAJ_VER <= 15)
 	ASTOBJ_COMPONENTS(struct stuff);
+#else
+	char name[STUFF_NAME_LEN];
+#endif
 	int generating_done;
 	char *q;
 	char *pq_r;  /* queue read position */
@@ -138,9 +158,13 @@ static struct dtmf_lookup ast_dtmf_table[dtmf_codes] = {
 
 static void swift_init_stuff(struct stuff *ps)
 {
+#if (_AST_MAJ_VER <= 15)
 	ASTOBJ_INIT(ps);
+#else
+    ao2_alloc(sizeof(*ps), NULL);
+#endif
 	ps->generating_done = 0;
-	ps->q = malloc(cfg_buffer_size);
+	ps->q = ast_malloc(cfg_buffer_size);
 	ps->pq_r = ps->q;
 	ps->pq_w = ps->q;
 	ps->qc = 0;
@@ -150,18 +174,34 @@ static void swift_init_stuff(struct stuff *ps)
 static int swift_generator_running(struct stuff *ps)
 {
 	int r;
+#if (_AST_MAJ_VER <= 15)
 	ASTOBJ_RDLOCK(ps);
+#else
+	ao2_rdlock(ps);
+#endif
 	r = !ps->immediate_exit && (!ps->generating_done || ps->qc);
+#if (_AST_MAJ_VER <= 15)
 	ASTOBJ_UNLOCK(ps);
+#else
+	ao2_unlock(ps);
+#endif
 	return r;
 }
 
 static int swift_bytes_available(struct stuff *ps)
 {
 	int r;
+#if (_AST_MAJ_VER <= 15)
 	ASTOBJ_RDLOCK(ps);
+#else
+	ao2_rdlock(ps);
+#endif
 	r = ps->qc;
+#if (_AST_MAJ_VER <= 15)
 	ASTOBJ_UNLOCK(ps);
+#else
+	ao2_unlock(ps);
+#endif
 	return r;
 }
 
@@ -178,7 +218,11 @@ static swift_result_t swift_cb(swift_event *event, swift_event_t type, void *uda
 
 		if (!SWIFT_FAILED(rv) && len > 0) {
 			ast_log(LOG_DEBUG, "audio callback\n");
+#if (_AST_MAJ_VER <= 15)
 			ASTOBJ_WRLOCK(ps);
+#else
+			ao2_wrlock(ps);
+#endif
 
 			/* Sleep while waiting for some queue space to become available */
 			while (len + ps->qc > cfg_buffer_size && !ps->immediate_exit) {
@@ -187,12 +231,24 @@ static swift_result_t swift_cb(swift_event *event, swift_event_t type, void *uda
 				   + another (125 usec/sample * framesize samples) (1 frame) for fudge */
 				sleepfor = ((unsigned long)(len - (cfg_buffer_size - ps->qc)) * 125UL) + (125UL * (unsigned long)framesize);
 				/* ast_log(LOG_DEBUG, "generator: %d bytes to write but only %d space avail, sleeping %ldus\n", len, cfg_buffer_size - ps->qc, sleepfor); */
+#if (_AST_MAJ_VER <= 15)
 				ASTOBJ_UNLOCK(ps);
+#else
+				ao2_unlock(ps);
+#endif
 				usleep(sleepfor);
+#if (_AST_MAJ_VER <= 15)
 				ASTOBJ_WRLOCK(ps);
+#else
+				ao2_wrlock(ps);
+#endif
 			}
 			if (ps->immediate_exit) {
+#if (_AST_MAJ_VER <= 15)
 				ASTOBJ_UNLOCK(ps);
+#else
+				ao2_unlock(ps);
+#endif
 				return SWIFT_SUCCESS;
 			}
 
@@ -217,29 +273,49 @@ static swift_result_t swift_cb(swift_event *event, swift_event_t type, void *uda
 				ps->qc += len;
 			}
 
+#if (_AST_MAJ_VER <= 15)
 			ASTOBJ_UNLOCK(ps);
+#else
+			ao2_unlock(ps);
+#endif
 		} else {
 			ast_log(LOG_DEBUG, "got audio callback but get_audio call failed\n");
 		}
 	} else if (type == SWIFT_EVENT_END) {
 		ast_log(LOG_DEBUG, "got END callback; done generating audio\n");
+#if (_AST_MAJ_VER <= 15)
 		ASTOBJ_WRLOCK(ps);
+#else
+		ao2_wrlock(ps);
+#endif
 		ps->generating_done = 1;
+#if (_AST_MAJ_VER <= 15)
 		ASTOBJ_UNLOCK(ps);
+#else
+		ao2_unlock(ps);
+#endif
 #if defined _SWIFT_VER_6
 	} else if (type == SWIFT_EVENT_ERROR) {
-		/* 
+		/*
 		 * Error events are used to communicate to app_swift that there are no more swift_ports available.
-		 * So check to make sure that is the cause of the error signal, then terminate. 
+		 * So check to make sure that is the cause of the error signal, then terminate.
 		 * Termination may not be the best behavior, but any queuing should be managed on the Asterisk side.
 		 */
 		swift_result_t error_code;
 
 		if ((swift_event_get_error(event, &error_code, NULL)==SWIFT_SUCCESS) && (error_code == SWIFT_PORT_UNAVAILABLE)) {
 			ast_log(LOG_WARNING, "Received SWIFT_EVENT_ERROR with code: SWIFT_PORT_UNAVAILABLE.  There are no ports available for simultaneous synthesis.  All licensed ports are already in use.\n");
+#if (_AST_MAJ_VER <= 15)
 			ASTOBJ_WRLOCK(ps);
+#else
+			ao2_wrlock(ps);
+#endif
 			ps->generating_done = 1;
+#if (_AST_MAJ_VER <= 15)
 			ASTOBJ_UNLOCK(ps);
+#else
+			ao2_unlock(ps);
+#endif
 		}
 #endif
 	} else {
@@ -250,7 +326,7 @@ static swift_result_t swift_cb(swift_event *event, swift_event_t type, void *uda
 
 static int dtmf_conv(int dtmf)
 {
-	char *res = (char *) malloc(100);
+	char *res = (char *) ast_malloc(100);
 	int dtmf_search_counter = 0, dtmf_search_match = 0;
 
 	memset(res, 0, 100);
@@ -267,7 +343,7 @@ static int dtmf_conv(int dtmf)
 
 static char *listen_for_dtmf(struct ast_channel *chan, int timeout, int max_digits)
 {
-	char *dtmf_conversion = (char *) malloc(100);
+	char *dtmf_conversion = (char *) ast_malloc(100);
 	char cnv[2];
 	int dtmf = 0, i = 0;
 
@@ -285,17 +361,17 @@ static char *listen_for_dtmf(struct ast_channel *chan, int timeout, int max_digi
 		strcat(dtmf_conversion, cnv);
 		i += 1;
 	}
-	return strdup(dtmf_conversion);
+	return ast_strdup(dtmf_conversion);
 }
 
 #if (defined _AST_VER_1_4 || defined _AST_VER_1_6)
 static int app_exec(struct ast_channel *chan, void *data)
-#elif (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
+#elif (defined _AST_VER_1_8 || _AST_MAJ_VER >= 10)
 static int app_exec(struct ast_channel *chan, const char *data)
 #endif
 {
 	int res = 0, max_digits = 0, timeout = 0, alreadyran = 0;
-	int ms, len, availatend;
+	int ms = -1, len = 0, availatend = 0;
 	char *argv[3], *text = NULL, *rc = NULL;
 	char tmp_exten[2], results[20];
 	struct ast_module_user *u;
@@ -305,7 +381,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	char *parse;
 #if (defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12)
 	struct ast_format old_writeformat;
-#elif (defined _AST_VER_13)
+#elif (_AST_MAJ_VER >= 13)
 	RAII_VAR(struct ast_format *, old_writeformat, NULL, ao2_cleanup);
 #else
 	int old_writeformat = 0;
@@ -322,9 +398,11 @@ static int app_exec(struct ast_channel *chan, const char *data)
 
 	struct myframe {
 		struct ast_frame f;
-		unsigned char offset[AST_FRIENDLY_OFFSET];
-		unsigned char frdata[framesize];
-	} myf;
+		char offset[AST_FRIENDLY_OFFSET];
+		short frdata[FRAMESIZE];
+	} myf = {
+        .f = { 0, },
+    };
 
 	swift_engine *engine;
 	swift_port *port = NULL;
@@ -362,7 +440,10 @@ static int app_exec(struct ast_channel *chan, const char *data)
 		ast_log(LOG_DEBUG, "Max Digits : %d\n", max_digits);
 	}
 
-	ps = malloc(sizeof(struct stuff));
+	if( (ps = ast_malloc(sizeof(struct stuff))) == NULL ){
+		ast_log(LOG_WARNING, "malloc fail! - memory problem?\n");
+        goto exception;
+    }
 	swift_init_stuff(ps);
 
 	/* Setup synthesis */
@@ -393,7 +474,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 
 #if defined _SWIFT_VER_6
 	if (port!=NULL) {
-		/* 
+		/*
 		 * This registers a chan with swift, otherwise through repeated DTMF+synth requests
 		 * a single call could consume all available concurrent synthesis ports.
 		*/
@@ -427,7 +508,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 		ast_log(LOG_ERROR, "Failed to speak.\n");
 		goto exception;
 	}
-#if (defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
+#if (_AST_MAJ_VER >= 11)
 	if (ast_channel_state(chan) != AST_STATE_UP) {
 #else
 	if (chan->_state != AST_STATE_UP) {
@@ -449,7 +530,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	ast_format_copy(&old_writeformat, ast_channel_writeformat(chan));
 
 	if (ast_set_write_format_by_id(chan, AST_FORMAT_ULAW) < 0) {
-#elif (defined _AST_VER_13)
+#elif (_AST_MAJ_VER >= 13)
 	old_writeformat = ao2_bump(ast_channel_writeformat(chan));
 
 	if (ast_set_write_format(chan, ast_format_ulaw) < 0) {
@@ -471,7 +552,11 @@ static int app_exec(struct ast_channel *chan, const char *data)
 
 		if (ms <= 0) {
 			if (swift_bytes_available(ps) > 0) {
+#if (_AST_MAJ_VER <= 15)
 				ASTOBJ_WRLOCK(ps);
+#else
+				ao2_wrlock(ps);
+#endif
 				len = fmin(framesize, ps->qc);
 				availatend = cfg_buffer_size - (ps->pq_r - ps->q);
 
@@ -499,7 +584,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 				myf.f.subclass.codec = AST_FORMAT_ULAW;
 #elif (defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12)
 				ast_format_set(&myf.f.subclass.format, AST_FORMAT_ULAW, 0);
-#elif (defined _AST_VER_13)
+#elif (_AST_MAJ_VER >= 13)
 				myf.f.subclass.format = ast_format_ulaw;
 #endif
 				myf.f.datalen = len;
@@ -516,6 +601,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 				myf.f.delivery.tv_usec = 0;
 
 				if (ast_write(chan, &myf.f) < 0) {
+                    res = -1;
 					ast_log(LOG_DEBUG, "ast_write failed\n");
 				}
 
@@ -525,7 +611,11 @@ static int app_exec(struct ast_channel *chan, const char *data)
 					ast_log(LOG_DEBUG, "queue claims to contain negative bytes. Huh? qc < 0\n");
 				}
 
+#if (_AST_MAJ_VER <= 15)
 				ASTOBJ_UNLOCK(ps);
+#else
+				ao2_unlock(ps);
+#endif
 				next = ast_tvadd(next, ast_samp2tv(myf.f.samples, samplerate));
 			} else {
 				next = ast_tvadd(next, ast_samp2tv(framesize / 2, samplerate));
@@ -537,30 +627,54 @@ static int app_exec(struct ast_channel *chan, const char *data)
 			if (ms < 0) {
 				ast_log(LOG_DEBUG, "Hangup detected\n");
 				res = -1;
+#if (_AST_MAJ_VER <= 15)
 				ASTOBJ_WRLOCK(ps);
+#else
+				ao2_wrlock(ps);
+#endif
 				ps->immediate_exit = 1;
+#if (_AST_MAJ_VER <= 15)
 				ASTOBJ_UNLOCK(ps);
+#else
+				ao2_unlock(ps);
+#endif
 			} else if (ms) {
 				f = ast_read(chan);
 
 				if (!f) {
 					ast_log(LOG_DEBUG, "Null frame == hangup() detected\n");
 					res = -1;
+#if (_AST_MAJ_VER <= 15)
 					ASTOBJ_WRLOCK(ps);
+#else
+					ao2_wrlock(ps);
+#endif
 					ps->immediate_exit = 1;
+#if (_AST_MAJ_VER <= 15)
 					ASTOBJ_UNLOCK(ps);
+#else
+					ao2_unlock(ps);
+#endif
 				} else {
 					if (f->frametype == AST_FRAME_DTMF && timeout > 0 && max_digits > 0) {
 #if (defined _AST_VER_1_6 || defined _AST_VER_1_4)
 						char originalDTMF = f->subclass;
-#elif (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
+#elif (defined _AST_VER_1_8 || _AST_MAJ_VER >= 10)
 						char originalDTMF = f->subclass.integer;
 #endif
 						alreadyran = 1;
 						res = 0;
+#if (_AST_MAJ_VER <= 15)
 						ASTOBJ_WRLOCK(ps);
+#else
+						ao2_wrlock(ps);
+#endif
 						ps->immediate_exit = 1;
+#if (_AST_MAJ_VER <= 15)
 						ASTOBJ_UNLOCK(ps);
+#else
+						ao2_unlock(ps);
+#endif
 
 						if (max_digits > 1) {
 							rc = listen_for_dtmf(chan, timeout, max_digits - 1);
@@ -583,7 +697,11 @@ static int app_exec(struct ast_channel *chan, const char *data)
 			}
 		}
 
+#if (_AST_MAJ_VER <= 15)
 		ASTOBJ_RDLOCK(ps);
+#else
+		ao2_rdlock(ps);
+#endif
 
 		if (ps->immediate_exit && !ps->generating_done) {
 			if (SWIFT_FAILED(sresult = swift_port_stop(port, tts_stream, SWIFT_EVENT_NOW))) {
@@ -591,7 +709,11 @@ static int app_exec(struct ast_channel *chan, const char *data)
 			}
 		}
 
+#if (_AST_MAJ_VER <= 15)
 		ASTOBJ_UNLOCK(ps);
+#else
+		ao2_unlock(ps);
+#endif
 	}
 	if (alreadyran == 0 && timeout > 0 && max_digits > 0) {
 		rc = listen_for_dtmf(chan, timeout, max_digits);
@@ -604,7 +726,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	}
 	if (max_digits >= 1 && results != NULL) {
 		if (cfg_goto_exten) {
-#if (defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
+#if (_AST_MAJ_VER >= 11)
 			ast_log(LOG_NOTICE, "GoTo(%s|%s|%d) : ", ast_channel_context(chan), results, 1);
 #else
 			ast_log(LOG_NOTICE, "GoTo(%s|%s|%d) : ", chan->context, results, 1);
@@ -613,12 +735,12 @@ static int app_exec(struct ast_channel *chan, const char *data)
 #if (defined _AST_VER_1_6 || defined _AST_VER_1_4)
 			if (ast_exists_extension (chan, chan->context, results, 1, chan->cid.cid_num)) {
 #elif (defined _AST_VER_1_8 || defined _AST_VER_10)
-			 if (ast_exists_extension (chan, chan->context, results, 1, chan->caller.id.number.str)) {
-#elif (defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
-			 if (ast_exists_extension (chan, ast_channel_context(chan), results, 1, ast_channel_caller(chan)->id.number.str)) {
+			if (ast_exists_extension (chan, chan->context, results, 1, chan->caller.id.number.str)) {
+#elif (_AST_MAJ_VER >= 11)
+			if (ast_exists_extension (chan, ast_channel_context(chan), results, 1, ast_channel_caller(chan)->id.number.str)) {
 #endif
 				ast_log(LOG_NOTICE, "OK\n");
-#if (defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
+#if (_AST_MAJ_VER >= 11)
 				ast_channel_exten_set(chan, results);
 				ast_channel_priority_set(chan, 0);
 #else
@@ -644,7 +766,11 @@ static int app_exec(struct ast_channel *chan, const char *data)
 		ps->q = NULL;
 	}
 	if (ps) {
+#if (_AST_MAJ_VER <= 15)
 		ast_free(ps);
+#else
+		ao2_ref(ps, -1);
+#endif
 		ps = NULL;
 	}
 #if (defined _AST_VER_1_6 || defined _AST_VER_1_4 || defined _AST_VER_1_8)
@@ -655,7 +781,7 @@ static int app_exec(struct ast_channel *chan, const char *data)
 	if (!res) {
 		ast_set_write_format(chan, &old_writeformat);
 	}
-#elif (defined _AST_VER_13)
+#elif (_AST_MAJ_VER >= 13)
 	if (!res) {
 		ast_set_write_format(chan, old_writeformat);
 	}
@@ -680,7 +806,7 @@ static int load_module(void)
 	int res = 0;
 	const char *val = NULL;
 	struct ast_config *cfg;
-#if  (defined _AST_VER_1_6 || defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
+#if  (defined _AST_VER_1_6 || defined _AST_VER_1_8 || _AST_MAJ_VER >= 10)
 	struct ast_flags config_flags = { CONFIG_FLAG_NOCACHE };
 #endif
 
@@ -694,14 +820,14 @@ static int load_module(void)
 
 #if (defined _AST_VER_1_6 || defined _AST_VER_1_4)
 	res = ast_register_application(app, app_exec, synopsis, descrip) ?
-#elif (defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
+#elif (defined _AST_VER_1_8 || _AST_MAJ_VER >= 10)
 	res = ast_register_application_xml(app, app_exec) ?
 #endif
 		AST_MODULE_LOAD_DECLINE : AST_MODULE_LOAD_SUCCESS;
 
 #if defined _AST_VER_1_4
 	cfg = ast_config_load(SWIFT_CONFIG_FILE);
-#elif (defined _AST_VER_1_6 || defined _AST_VER_1_8 || defined _AST_VER_10 || defined _AST_VER_11 || defined _AST_VER_12 || defined _AST_VER_13)
+#elif (defined _AST_VER_1_6 || defined _AST_VER_1_8 || _AST_MAJ_VER >= 10)
 	cfg = ast_config_load(SWIFT_CONFIG_FILE, config_flags);
 #endif
 
